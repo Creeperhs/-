@@ -101,7 +101,7 @@ jobs:
                       android:value="true" />
                   <meta-data
                       android:name="xposeddescription"
-                      android:value="这是一个用来屏蔽 Alt+Tab 和 Win 键的Xposed模块 by Creeperhs" />
+                      android:value="这是一个用来屏蔽 Alt+Tab 和 Win 键的Xposed模块" />
                   <meta-data
                       android:name="xposedminversion"
                       android:value="82" />
