@@ -169,11 +169,17 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Build with Gradle
-        run: ./gradlew assembleRelease
+      # ==================================
+      # ===== 主要修改在这里 =====
+      # ==================================
 
+      # 步骤6: 编译 Debug 版本的 APK (它会被自动签名)
+      - name: Build with Gradle (Debug version)
+        run: ./gradlew assembleDebug
+
+      # 步骤7: 上传编译好的 Debug APK
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: ShortcutHook-Module-APK
-          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
