@@ -22,6 +22,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      # 步骤4: 使用更稳健的 Heredoc 方式创建所有项目文件
       - name: Create Project Structure and Files
         run: |
           PACKAGE_NAME="com.creeperhs.shortcuthook"
@@ -31,15 +32,14 @@ jobs:
           mkdir -p "${PACKAGE_PATH}"
 
           # --- 创建项目级 build.gradle ---
-          # 重点：更新了 AGP 和 Kotlin 插件的版本
-          echo '
+          cat <<EOF > build.gradle
           buildscript {
               repositories {
                   google()
                   mavenCentral()
               }
               dependencies {
-                  classpath "com.android.tools.build:gradle:8.3.2" 
+                  classpath "com.android.tools.build:gradle:8.3.2"
                   classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.22"
               }
           }
@@ -52,19 +52,19 @@ jobs:
           task clean(type: Delete) {
               delete rootProject.buildDir
           }
-          ' > build.gradle
+          EOF
 
           # --- 创建应用级 app/build.gradle ---
-          echo '
+          cat <<EOF > app/build.gradle
           plugins {
               id "com.android.application"
               id "kotlin-android"
           }
           android {
-              namespace = "'${PACKAGE_NAME}'"
+              namespace = "${PACKAGE_NAME}"
               compileSdk = 34
               defaultConfig {
-                  applicationId = "'${PACKAGE_NAME}'"
+                  applicationId = "${PACKAGE_NAME}"
                   minSdk = 21
                   targetSdk = 34
                   versionCode = 1
@@ -84,18 +84,18 @@ jobs:
           dependencies {
               compileOnly "de.robv.android.xposed:api:82"
           }
-          ' > app/build.gradle
+          EOF
 
-          # --- 创建 settings.gradle ---
-          echo "
-          rootProject.name = '\''MyXposedModule'\''
-          include '\'':app'\''
-          " > settings.gradle
+          # --- 创建 settings.gradle (修正了这里的语法问题) ---
+          cat <<EOF > settings.gradle
+          rootProject.name = 'MyXposedModule'
+          include ':app'
+          EOF
 
           # --- 创建 AndroidManifest.xml ---
-          echo '
+          cat <<EOF > app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <application android:label="系统事件拦截器">
+              <application android:label="系统事件拦截">
                   <meta-data
                       android:name="xposedmodule"
                       android:value="true" />
@@ -107,13 +107,12 @@ jobs:
                       android:value="82" />
               </application>
           </manifest>
-          ' > app/src/main/AndroidManifest.xml
+          EOF
 
           # --- 创建 xposed_init 文件 ---
-          echo "'${PACKAGE_NAME}'.ShortcutHook" > app/src/main/assets/xposed_init
+          echo "${PACKAGE_NAME}.ShortcutHook" > app/src/main/assets/xposed_init
 
           # --- 创建你的Kotlin代码文件 ---
-          # (这部分代码无需修改)
           cat <<EOF > "${PACKAGE_PATH}/ShortcutHook.kt"
           package com.example.shortcuthook
 
@@ -164,8 +163,7 @@ jobs:
           }
           EOF
 
-          # --- 下载 Gradle Wrapper ---
-          # 重点：指定一个与新版AGP兼容的、稳定的Gradle版本
+          # --- 下载并指定一个兼容的 Gradle 版本 ---
           gradle wrapper --gradle-version 8.4 --distribution-type all
 
       - name: Make gradlew executable
