@@ -2,7 +2,6 @@
 
 name: Build Xposed Module
 
-# 允许你从 GitHub Actions 页面手动触发此工作流
 on:
   workflow_dispatch:
 
@@ -11,33 +10,28 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 步骤1: 检出代码 (虽然我们仓库是空的，但这是标准流程)
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 步骤2: 设置Java环境 (Android编译需要JDK)
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      # 步骤3: 设置Android SDK环境
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # 步骤4: 动态创建整个Android项目结构和文件
-      - name: Create Project Structure
+      - name: Create Project Structure and Files
         run: |
-          # 定义包名，确保下面所有路径和文件内容中的包名都一致
           PACKAGE_NAME="com.creeperhs.shortcuthook"
           PACKAGE_PATH="app/src/main/java/com/example/shortcuthook"
 
-          # 创建项目目录结构
           mkdir -p app/src/main/assets
           mkdir -p "${PACKAGE_PATH}"
 
           # --- 创建项目级 build.gradle ---
+          # 重点：更新了 AGP 和 Kotlin 插件的版本
           echo '
           buildscript {
               repositories {
@@ -45,8 +39,8 @@ jobs:
                   mavenCentral()
               }
               dependencies {
-                  classpath "com.android.tools.build:gradle:8.2.0"
-                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.20"
+                  classpath "com.android.tools.build:gradle:8.3.2" 
+                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.22"
               }
           }
           allprojects {
@@ -94,20 +88,20 @@ jobs:
 
           # --- 创建 settings.gradle ---
           echo "
-          rootProject.name = 'MyXposedModule'
-          include ':app'
+          rootProject.name = '\''MyXposedModule'\''
+          include '\'':app'\''
           " > settings.gradle
 
           # --- 创建 AndroidManifest.xml ---
           echo '
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <application android:label="Shortcut Hook Module">
+              <application android:label="系统事件拦截器">
                   <meta-data
                       android:name="xposedmodule"
                       android:value="true" />
                   <meta-data
                       android:name="xposeddescription"
-                      android:value="Disables Alt-Tab and Win/Meta keys by Creeperhs" />
+                      android:value="这是一个用来屏蔽 Alt+Tab 和 Win 键的Xposed模块 by Creeperhs" />
                   <meta-data
                       android:name="xposedminversion"
                       android:value="82" />
@@ -119,7 +113,7 @@ jobs:
           echo "'${PACKAGE_NAME}'.ShortcutHook" > app/src/main/assets/xposed_init
 
           # --- 创建你的Kotlin代码文件 ---
-          # 使用 EOF 来处理多行文本和特殊字符
+          # (这部分代码无需修改)
           cat <<EOF > "${PACKAGE_PATH}/ShortcutHook.kt"
           package com.example.shortcuthook
 
@@ -149,7 +143,6 @@ jobs:
                               override fun beforeHookedMethod(param: MethodHookParam) {
                                   val e = param.args[1] as KeyEvent
                                   
-                                  // alt-tab
                                   if (e.keyCode == KeyEvent.KEYCODE_TAB &&
                                       e.metaState and KeyEvent.META_ALT_ON != 0
                                   ) {
@@ -157,7 +150,6 @@ jobs:
                                       return
                                   }
                                   
-                                  // win/meta
                                   if (e.keyCode == KeyEvent.KEYCODE_META_LEFT ||
                                       e.keyCode == KeyEvent.KEYCODE_META_RIGHT
                                   ) {
@@ -173,21 +165,17 @@ jobs:
           EOF
 
           # --- 下载 Gradle Wrapper ---
-          # 这是一个更稳健的方法，确保Gradle Wrapper存在
-          gradle wrapper --gradle-version 8.2 --distribution-type all
+          # 重点：指定一个与新版AGP兼容的、稳定的Gradle版本
+          gradle wrapper --gradle-version 8.4 --distribution-type all
 
-      # 步骤5: 赋予 gradlew 执行权限
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      # 步骤6: 使用 Gradle 编译项目，生成 Release 版本的 APK
       - name: Build with Gradle
         run: ./gradlew assembleRelease
 
-      # 步骤7: 上传编译好的 APK 文件作为 "Artifact"
-      # 你可以在工作流运行结束后下载这个文件
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: ShortcutHook-Module-APK
-          path: app/build/outputs/apk/release/app-release.apk
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
