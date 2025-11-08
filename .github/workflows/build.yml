@@ -1,38 +1,193 @@
-# .github/workflows/build.yml
+# .github/workflows/main.yml
 
 name: Build Xposed Module
 
+# 允许你从 GitHub Actions 页面手动触发此工作流
 on:
-  push:
-    branches: [ main ] # 或者你的主分支名，比如 master
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4 # 同样建议更新到 v4
+      # 步骤1: 检出代码 (虽然我们仓库是空的，但这是标准流程)
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4 # 同样建议更新到 v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
+      # 步骤2: 设置Java环境 (Android编译需要JDK)
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
-    - name: Setup Gradle
-      uses: gradle/gradle-build-action@v3 # v3 是此 action 的最新版本
+      # 步骤3: 设置Android SDK环境
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x ./gradlew
+      # 步骤4: 动态创建整个Android项目结构和文件
+      - name: Create Project Structure
+        run: |
+          # 定义包名，确保下面所有路径和文件内容中的包名都一致
+          PACKAGE_NAME="com.creeperhs.shortcuthook"
+          PACKAGE_PATH="app/src/main/java/com/example/shortcuthook"
 
-    - name: Build with Gradle
-      run: ./gradlew assembleRelease # 或者 assembleDebug
+          # 创建项目目录结构
+          mkdir -p app/src/main/assets
+          mkdir -p "${PACKAGE_PATH}"
 
-    # 这是 v4 版本的 actions/upload-artifact
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: ShortcutHook-release # 这里是产物的名字，下载下来会是一个 zip 包
-        path: app/build/outputs/apk/release/app-release.apk # APK 的实际路径，请确保正确
-        if-no-files-found: error # 如果没找到文件就报错
+          # --- 创建项目级 build.gradle ---
+          echo '
+          buildscript {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath "com.android.tools.build:gradle:8.2.0"
+                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.20"
+              }
+          }
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          task clean(type: Delete) {
+              delete rootProject.buildDir
+          }
+          ' > build.gradle
+
+          # --- 创建应用级 app/build.gradle ---
+          echo '
+          plugins {
+              id "com.android.application"
+              id "kotlin-android"
+          }
+          android {
+              namespace = "'${PACKAGE_NAME}'"
+              compileSdk = 34
+              defaultConfig {
+                  applicationId = "'${PACKAGE_NAME}'"
+                  minSdk = 21
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_1_8
+                  targetCompatibility = JavaVersion.VERSION_1_8
+              }
+              kotlinOptions {
+                  jvmTarget = "1.8"
+              }
+          }
+          repositories {
+              maven { url "https://api.xposed.info/" }
+          }
+          dependencies {
+              compileOnly "de.robv.android.xposed:api:82"
+          }
+          ' > app/build.gradle
+
+          # --- 创建 settings.gradle ---
+          echo "
+          rootProject.name = 'MyXposedModule'
+          include ':app'
+          " > settings.gradle
+
+          # --- 创建 AndroidManifest.xml ---
+          echo '
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application android:label="Shortcut Hook Module">
+                  <meta-data
+                      android:name="xposedmodule"
+                      android:value="true" />
+                  <meta-data
+                      android:name="xposeddescription"
+                      android:value="Disables Alt-Tab and Win/Meta keys by Creeperhs" />
+                  <meta-data
+                      android:name="xposedminversion"
+                      android:value="82" />
+              </application>
+          </manifest>
+          ' > app/src/main/AndroidManifest.xml
+
+          # --- 创建 xposed_init 文件 ---
+          echo "'${PACKAGE_NAME}'.ShortcutHook" > app/src/main/assets/xposed_init
+
+          # --- 创建你的Kotlin代码文件 ---
+          # 使用 EOF 来处理多行文本和特殊字符
+          cat <<EOF > "${PACKAGE_PATH}/ShortcutHook.kt"
+          package com.example.shortcuthook
+
+          import android.view.KeyEvent
+          import de.robv.android.xposed.IXposedHookLoadPackage
+          import de.robv.android.xposed.XC_MethodHook
+          import de.robv.android.xposed.XposedHelpers
+          import de.robv.android.xposed.callbacks.XC_LoadPackage
+
+          class ShortcutHook : IXposedHookLoadPackage {
+
+              override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
+                  if (lpparam.packageName != "android") return
+                  hook("interceptSystemKeysAndShortcutsOld", lpparam.classLoader)
+                  hook("interceptSystemKeysAndShortcutsNew", lpparam.classLoader)
+              }
+
+              private fun hook(method: String, cl: ClassLoader) {
+                  try {
+                      XposedHelpers.findAndHookMethod(
+                          "com.android.server.policy.PhoneWindowManager",
+                          cl,
+                          method,
+                          android.os.IBinder::class.java,
+                          KeyEvent::class.java,
+                          object : XC_MethodHook() {
+                              override fun beforeHookedMethod(param: MethodHookParam) {
+                                  val e = param.args[1] as KeyEvent
+                                  
+                                  // alt-tab
+                                  if (e.keyCode == KeyEvent.KEYCODE_TAB &&
+                                      e.metaState and KeyEvent.META_ALT_ON != 0
+                                  ) {
+                                      param.result = true
+                                      return
+                                  }
+                                  
+                                  // win/meta
+                                  if (e.keyCode == KeyEvent.KEYCODE_META_LEFT ||
+                                      e.keyCode == KeyEvent.KEYCODE_META_RIGHT
+                                  ) {
+                                      param.result = true
+                                      return
+                                  }
+                              }
+                          }
+                      )
+                  } catch (_: Throwable) {}
+              }
+          }
+          EOF
+
+          # --- 下载 Gradle Wrapper ---
+          # 这是一个更稳健的方法，确保Gradle Wrapper存在
+          gradle wrapper --gradle-version 8.2 --distribution-type all
+
+      # 步骤5: 赋予 gradlew 执行权限
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      # 步骤6: 使用 Gradle 编译项目，生成 Release 版本的 APK
+      - name: Build with Gradle
+        run: ./gradlew assembleRelease
+
+      # 步骤7: 上传编译好的 APK 文件作为 "Artifact"
+      # 你可以在工作流运行结束后下载这个文件
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ShortcutHook-Module-APK
+          path: app/build/outputs/apk/release/app-release.apk
